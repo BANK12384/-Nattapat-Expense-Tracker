@@ -1,4 +1,11 @@
 /// <reference types="vite/client" />
-declare const __firebase_config: string | undefined;
-declare const __app_id: string | undefined;
-declare const __initial_auth_token: string | undefined;
+
+interface Window {
+  __firebase_config?: string;
+  __app_id?: string;
+  __initial_auth_token?: string;
+}
+
+declare var __firebase_config: string | undefined;
+declare var __app_id: string | undefined;
+declare var __initial_auth_token: string | undefined;
