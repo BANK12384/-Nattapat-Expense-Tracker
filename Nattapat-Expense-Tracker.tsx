@@ -4,7 +4,8 @@ import {
   getAuth, 
   signInAnonymously, 
   signInWithCustomToken, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  User 
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -21,8 +22,6 @@ import {
   ArrowUpRight, 
   ArrowRightLeft, 
   PlusCircle, 
-  TrendingUp, 
-  Calendar, 
   CheckCircle2, 
   Clock, 
   ShieldCheck, 
@@ -44,33 +43,45 @@ import {
   Settings,
   Filter,
   Check,
-  Building2,
   Tag,
   Code2,
   Server,
   Database
 } from 'lucide-react';
 
-const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-let firebaseConfig = {};
+// ตัวแปรคอนฟิก Firebase
+const firebaseConfigStr = typeof window !== 'undefined' && window.__firebase_config ? window.__firebase_config : '{}';
+let firebaseConfig: any = {};
 try {
   firebaseConfig = JSON.parse(firebaseConfigStr);
 } catch (e) {
   console.error("Firebase config parse error", e);
 }
 
+// Fallback config กรณีที่ยังไม่ได้ใส่คอนฟิกจริง
+if (!firebaseConfig || !firebaseConfig.apiKey) {
+  firebaseConfig = {
+    apiKey: "AIzaSyDemoKeyReplaceWithYourOwn",
+    authDomain: "demo-project.firebaseapp.com",
+    projectId: "demo-project",
+    storageBucket: "demo-project.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "1:123456789:web:demo"
+  };
+}
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'bankkiller-expense-app';
+const appId = (typeof window !== 'undefined' && window.__app_id) ? window.__app_id : 'bankkiller-expense-app';
 
-// Whitelisted Authorized Email
+// อีเมลที่ได้รับอนุญาตให้ใช้งานระบบเท่านั้น
 const AUTHORIZED_EMAIL = "bankkiller.bank1980@gmail.com";
-const GEMINI_API_KEY = ""; // Injected automatically at runtime by Canvas environment
+const GEMINI_API_KEY = ""; // ใส่ Gemini API Key ของคุณที่นี่
 
 export default function App() {
-  // Auth States
-  const [user, setUser] = useState(null);
+  // สถานะการยืนยันตัวตน (Auth States)
+  const [user, setUser] = useState<User | null>(null);
   const [authEmail, setAuthEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
@@ -80,21 +91,21 @@ export default function App() {
   const [authSuccess, setAuthSuccess] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  // Navigation & Filter States
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, add, transactions, installments, drive_setup, setup_guide, settings
+  // สถานะการสลับหน้าและกรองข้อมูล
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7)); // YYYY-MM
 
-  // App Data States
-  const [transactions, setTransactions] = useState([]);
-  const [accounts, setAccounts] = useState(['เงินสด', 'กสิกรไทย (KBANK)', 'ไทยพาณิชย์ (SCB)', 'กรุงไทย (KTB)', 'บัตรเครดิต', 'อื่นๆ']);
+  // ข้อมูลรายการและบัญชี
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [accounts] = useState(['เงินสด', 'กสิกรไทย (KBANK)', 'ไทยพาณิชย์ (SCB)', 'กรุงไทย (KTB)', 'บัตรเครดิต', 'อื่นๆ']);
   
-  // Internal Account Keywords for Auto-Transfer Detection
+  // คำค้นชื่อบัญชีส่วนตัวสำหรับตรวจสอบการโอนย้ายบัญชี
   const [transferKeywords, setTransferKeywords] = useState([
     'bankkiller', 'bank1980', 'กสิกร', 'ไทยพาณิชย์', 'กรุงไทย', 'KBANK', 'SCB', 'KTB'
   ]);
   const [newKeyword, setNewKeyword] = useState('');
 
-  // Form States
+  // ฟอร์มบันทึกข้อมูล
   const [transType, setTransType] = useState('EXPENSE'); // INCOME, EXPENSE, TRANSFER
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('อาหาร/เครื่องดื่ม');
@@ -103,29 +114,29 @@ export default function App() {
   const [note, setNote] = useState('');
   const [transDate, setTransDate] = useState(new Date().toISOString().split('T')[0]);
   
-  // Installment / Period States
+  // รายการผ่อนชำระ
   const [isInstallment, setIsInstallment] = useState(false);
   const [startMonth, setStartMonth] = useState(new Date().toISOString().substring(0, 7));
   const [endMonth, setEndMonth] = useState('');
   const [dueDay, setDueDay] = useState('5');
-  const [totalMonths, setTotalMonths] = useState('10');
 
-  // Drive & OCR States
+  // สแกนสลีปและ Google Drive
   const [gasUrl, setGasUrl] = useState(() => localStorage.getItem('bankkiller_gas_url') || '');
   const [driveFolderId, setDriveFolderId] = useState(() => localStorage.getItem('bankkiller_drive_folder_id') || '');
-  const [slipImageBase64, setSlipImageBase64] = useState(null);
+  const [slipImageBase64, setSlipImageBase64] = useState<string | null>(null);
   const [isScanningSlip, setIsScanningSlip] = useState(false);
   const [slipAnalysisText, setSlipAnalysisText] = useState('');
   const [uploadedDriveUrl, setUploadedDriveUrl] = useState('');
   const [copiedCodeGas, setCopiedCodeGas] = useState(false);
   const [copiedCodeRules, setCopiedCodeRules] = useState(false);
 
-  // AI Advice State
+  // คำแนะนำจาก AI
   const [aiAdvice, setAiAdvice] = useState('');
   const [isLoadingAi, setIsLoadingAi] = useState(false);
 
+  // จับเวลานับถอยหลัง OTP
   useEffect(() => {
-    let interval = null;
+    let interval: any = null;
     if (timer > 0) {
       interval = setInterval(() => {
         setTimer((prev) => prev - 1);
@@ -136,11 +147,13 @@ export default function App() {
     return () => clearInterval(interval);
   }, [timer]);
 
+  // เริ่มต้นยืนยันตัวตนกับ Firebase
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
+        const initialToken = typeof window !== 'undefined' ? window.__initial_auth_token : undefined;
+        if (initialToken) {
+          await signInWithCustomToken(auth, initialToken);
         } else {
           await signInAnonymously(auth);
         }
@@ -156,19 +169,19 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // ดึงข้อมูลรายการจาก Firestore
   useEffect(() => {
     if (!user) return;
 
-    // Path: /artifacts/{appId}/users/{userId}/transactions
     const transRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
     const q = query(transRef);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({
+      const docs: any[] = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...(doc.data() as any)
       }));
-      docs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      docs.sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
       setTransactions(docs);
     }, (error) => {
       console.error("Firestore listener error:", error);
@@ -177,6 +190,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
+  // ระบบขอรหัส OTP ทางอีเมล
   const handleSendOtp = () => {
     setAuthError('');
     setAuthSuccess('');
@@ -198,6 +212,7 @@ export default function App() {
     }, 1200);
   };
 
+  // ตรวจสอบรหัส OTP
   const handleVerifyOtp = () => {
     setAuthError('');
     if (otpCode !== generatedOtp) {
@@ -219,7 +234,8 @@ export default function App() {
 
   const isUserAuthenticated = localStorage.getItem('bankkiller_auth_logged_in') === 'true';
 
-  const callGeminiApi = async (payload, endpoint = 'generateContent', model = 'gemini-2.5-flash-preview-09-2025') => {
+  // เชื่อมต่อ Gemini API
+  const callGeminiApi = async (payload: any, endpoint = 'generateContent', model = 'gemini-2.5-flash-preview-09-2025') => {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${endpoint}?key=${GEMINI_API_KEY}`;
     const delays = [1000, 2000, 4000];
 
@@ -235,7 +251,7 @@ export default function App() {
           return await response.json();
         }
       } catch (e) {
-        // Retry silently
+        // ลองใหม่อัตโนมัติ
       }
       if (attempt < delays.length) {
         await new Promise(res => setTimeout(res, delays[attempt]));
@@ -244,7 +260,8 @@ export default function App() {
     throw new Error('Gemini API Request Failed.');
   };
 
-  const uploadToGoogleDrive = async (base64Data, filename) => {
+  // อัปโหลดไฟล์รูปไปยัง Google Drive ผ่าน Google Apps Script
+  const uploadToGoogleDrive = async (base64Data: string, filename: string) => {
     if (!gasUrl) return null;
     try {
       const response = await fetch(gasUrl, {
@@ -264,8 +281,9 @@ export default function App() {
     }
   };
 
-  const handleSlipFileUpload = async (e) => {
-    const file = e.target.files[0];
+  // อัปโหลดและสแกนอ่านสลีป
+  const handleSlipFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
     setIsScanningSlip(true);
@@ -273,6 +291,7 @@ export default function App() {
 
     const reader = new FileReader();
     reader.onloadend = async () => {
+      if (!reader.result || typeof reader.result !== 'string') return;
       const base64Data = reader.result.split(',')[1];
       setSlipImageBase64(reader.result);
 
@@ -317,6 +336,232 @@ export default function App() {
           if (parsedData.date) setTransDate(parsedData.date);
 
           const receiver = (parsedData.receiverName || '').toLowerCase();
+          const sender = (parsedData.senderName || '').toLowerCase();
+
+          // ตรวจสอบว่าเป็นบัญชีตัวเองหรือไม่
+          const isInternalTransfer = transferKeywords.some(kw => 
+            receiver.includes(kw.toLowerCase()) || sender.includes(kw.toLowerCase())
+          );
+
+          if (isInternalTransfer || parsedData.transType === 'TRANSFER') {
+            setTransType('TRANSFER');
+            setSlipAnalysisText('✨ ตรวจพบว่าเป็น "การโอนย้ายบัญชีส่วนตัว" อัตโนมัติ! ระบบจะไม่นับเป็นรายจ่ายจริง');
+          } else {
+            setTransType(parsedData.transType || 'EXPENSE');
+            setSlipAnalysisText('สแกนสลีปสำเร็จ! ข้อมูลถูกนำเข้าฟอร์มเรียบร้อย');
+          }
+
+          let noteDetails = parsedData.note || '';
+          if (parsedData.senderName) noteDetails += ` [จาก: ${parsedData.senderName}]`;
+          if (parsedData.receiverName) noteDetails += ` [ถึง: ${parsedData.receiverName}]`;
+          setNote(noteDetails.trim());
+
+        } else {
+          setSlipAnalysisText('ไม่อาจอ่านข้อมูลสลีปได้ กรุณากรอกข้อมูลเอง');
+        }
+      } catch (err) {
+        console.error("OCR Slip Error:", err);
+        setSlipAnalysisText('เกิดข้อผิดพลาดในการเชื่อมต่อกับ Gemini AI');
+      } finally {
+        setIsScanningSlip(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // บันทึกรายการใหม่
+  const handleAddTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !amount || parseFloat(amount) <= 0) return;
+
+    try {
+      const transRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
+
+      const newTransaction = {
+        type: transType,
+        amount: parseFloat(amount),
+        category: transType === 'TRANSFER' ? 'โอนย้ายบัญชี' : category,
+        fromAccount: transType === 'INCOME' ? null : fromAccount,
+        toAccount: transType === 'EXPENSE' ? null : (transType === 'TRANSFER' ? toAccount : fromAccount),
+        note: note || '',
+        date: transDate,
+        slipImage: slipImageBase64 || null,
+        driveUrl: uploadedDriveUrl || '',
+        isInstallment: isInstallment,
+        installmentInfo: isInstallment ? {
+          startMonth: startMonth,
+          endMonth: endMonth || startMonth,
+          dueDay: parseInt(dueDay) || 1,
+          monthlyAmount: parseFloat(amount)
+        } : null,
+        createdAt: new Date().toISOString()
+      };
+
+      await addDoc(transRef, newTransaction);
+
+      setAmount('');
+      setNote('');
+      setSlipImageBase64(null);
+      setUploadedDriveUrl('');
+      setSlipAnalysisText('');
+      setIsInstallment(false);
+      setActiveTab('transactions');
+    } catch (err) {
+      console.error("Error adding transaction:", err);
+    }
+  };
+
+  // ลบรายการ
+  const handleDeleteTransaction = async (id: string) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', id);
+      await deleteDoc(docRef);
+    } catch (err) {
+      console.error("Error deleting transaction:", err);
+    }
+  };
+
+  // ขอคำแนะนำวิเคราะห์การเงินจาก Gemini AI
+  const handleAnalyzeFinances = async () => {
+    setIsLoadingAi(true);
+    setAiAdvice('');
+
+    try {
+      const filteredTrans = transactions.filter(t => t.date && t.date.startsWith(selectedMonth));
+      const monthIncome = filteredTrans.filter(t => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0);
+      const monthExpense = filteredTrans.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
+      
+      const categoryBreakdown: Record<string, number> = {};
+      filteredTrans.filter(t => t.type === 'EXPENSE').forEach(t => {
+        categoryBreakdown[t.category] = (categoryBreakdown[t.category] || 0) + t.amount;
+      });
+
+      const activeInstallmentsCount = transactions.filter(t => t.isInstallment).length;
+
+      const prompt = `วิเคราะห์การเงินส่วนบุคคลประจำเดือน (${selectedMonth}) ในฐานะ Gemini Spark ที่ปรึกษาการเงิน:
+- รายรับเดือนนี้: ${monthIncome.toLocaleString()} บาท
+- รายจ่ายจริงเดือนนี้ (ไม่รวมเงินโอนย้าย): ${monthExpense.toLocaleString()} บาท
+- รายการใช้จ่ายแยกตามหมวดหมู่: ${JSON.stringify(categoryBreakdown)}
+- จำนวนภาระผ่อนชำระที่มีอยู่: ${activeInstallmentsCount} รายการ
+
+กรุณาสรุปบทวิเคราะห์ภาษาไทยสั้นๆ 3 ข้อ:
+1. ประเมินดัชนีสุขภาพทางการเงิน (คะแนน 1-10 พร้อมเหตุผล)
+2. หมวดหมู่ที่เสี่ยงใช้เงินเกินตัว หรือข้อสังเกตพฤติกรรมการจ่าย
+3. คำแนะนำสำหรับการวางแผนออมเงินหรือลดรายจ่ายในเดือนถัดไป`;
+
+      const payload = { contents: [{ parts: [{ text: prompt }] }] };
+      const result = await callGeminiApi(payload);
+      const advice = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      setAiAdvice(advice || 'ไม่สามารถประมวลผลคำแนะนำได้');
+    } catch (err) {
+      console.error("AI Spark Error:", err);
+      setAiAdvice('เกิดข้อผิดพลาดในการเชื่อมต่อ Gemini Spark AI');
+    } finally {
+      setIsLoadingAi(false);
+    }
+  };
+
+  // กรองรายการประจำเดือนที่เลือก
+  const filteredTransactions = transactions.filter(t => t.date && t.date.startsWith(selectedMonth));
+
+  const monthIncome = filteredTransactions
+    .filter(t => t.type === 'INCOME')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const monthExpense = filteredTransactions
+    .filter(t => t.type === 'EXPENSE')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const monthNet = monthIncome - monthExpense;
+
+  // คำนวณยอดเงินคงเหลือสะสมตามบัญชี
+  const getAccountBalance = (accountName: string) => {
+    let balance = 0;
+    transactions.forEach(t => {
+      if (t.type === 'INCOME' && t.toAccount === accountName) {
+        balance += t.amount;
+      } else if (t.type === 'EXPENSE' && t.fromAccount === accountName) {
+        balance -= t.amount;
+      } else if (t.type === 'TRANSFER') {
+        if (t.fromAccount === accountName) balance -= t.amount;
+        if (t.toAccount === accountName) balance += t.amount;
+      }
+    });
+    return balance;
+  };
+
+  const gasScriptCode = `function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var folderId = "${driveFolderId || 'YOUR_GOOGLE_DRIVE_FOLDER_ID'}"; 
+    var folder = DriveApp.getFolderById(folderId);
+    
+    var blob = Utilities.newBlob(Utilities.base64Decode(data.base64), data.mimeType, data.filename);
+    var file = folder.createFile(blob);
+    
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    return ContentService.createTextOutput(
+      JSON.stringify({ status: "success", url: file.getUrl() })
+    ).setMimeType(ContentService.MimeType.JSON);
+    
+  } catch(error) {
+    return ContentService.createTextOutput(
+      JSON.stringify({ status: "error", message: error.toString() })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+}`;
+
+  const firestoreRulesCode = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /artifacts/{appId}/users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}`;
+
+  // หน้าจอล็อกอิน OTP
+  if (!isUserAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 font-sans">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+          <div className="absolute -top-16 -right-16 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-gradient-to-tr from-emerald-500 to-teal-400 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/20">
+              <Wallet className="w-8 h-8 text-slate-950" />
+            </div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">ระบบบัญชีรายรับ-รายจ่าย</h1>
+            <p className="text-xs text-slate-400 mt-1">ยืนยันตัวตนด้วย OTP ทางอีเมลปลอดภัยสูงสุด</p>
+
+            <div className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 bg-emerald-950/80 border border-emerald-800/60 rounded-full text-xs text-emerald-300 font-mono">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{AUTHORIZED_EMAIL}</span>
+            </div>
+          </div>
+
+          {authError && (
+            <div className="mb-6 p-4 bg-red-950/60 border border-red-800/60 rounded-2xl flex items-start gap-3 text-red-300 text-xs leading-relaxed">
+              <AlertCircle className="w-5 h-5 shrink-0 text-red-400 mt-0.5" />
+              <div>{authError}</div>
+            </div>
+          )}
+
+          {authSuccess && (
+            <div className="mb-6 p-4 bg-emerald-950/60 border border-emerald-800/60 rounded-2xl flex items-start gap-3 text-emerald-300 text-xs leading-relaxed">
+              <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400 mt-0.5" />
+              <div>{authSuccess}</div>
+            </div>
+          )}
+
+          {!otpSent ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">อีเมลผู้ได้รับอนุญาต</label>
+       eiverName || '').toLowerCase();
           const sender = (parsedData.senderName || '').toLowerCase();
 
           // Auto Transfer Detection Logic
